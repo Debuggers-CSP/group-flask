@@ -23,13 +23,15 @@ def init_quest_db():
     cursor.execute('''
         CREATE TABLE IF NOT EXISTS quests (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
+            user_github_id TEXT NOT NULL,
             title TEXT NOT NULL,
             location TEXT NOT NULL,
             objective TEXT NOT NULL,
             difficulty TEXT NOT NULL,
             reward TEXT NOT NULL,
             game_mode TEXT NOT NULL,
-            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            FOREIGN KEY (user_github_id) REFERENCES users(GitHubID)
         )
     ''')
     
@@ -247,6 +249,8 @@ class QuestAPI(Resource):
         try:
             data = request.get_json()
             
+            print(f"📝 Quest creation request received: {data}")
+            
             # Extract quest data
             title = data.get('title', '').strip()
             location = data.get('location', '').strip()
@@ -254,24 +258,37 @@ class QuestAPI(Resource):
             difficulty = data.get('difficulty', '').strip()
             reward = data.get('reward', '').strip()
             game_mode = data.get('gameMode', 'action')
+            user_github_id = data.get('userGithubId', '').strip()  # Get user ID from frontend
+            
+            print(f"✅ Parsed data - User: {user_github_id}, Title: {title}")
             
             # Validate required fields
-            if not all([title, location, objective, difficulty, reward]):
-                return {'message': 'All fields are required'}, 400
+            if not all([title, location, objective, difficulty, reward, user_github_id]):
+                missing = []
+                if not title: missing.append('title')
+                if not location: missing.append('location')
+                if not objective: missing.append('objective')
+                if not difficulty: missing.append('difficulty')
+                if not reward: missing.append('reward')
+                if not user_github_id: missing.append('userGithubId')
+                print(f"❌ Missing fields: {missing}")
+                return {'message': f'Missing required fields: {", ".join(missing)}'}, 400
             
-            # Save to database
+            # Save to database with user association
             db_path = 'instance/rpg_quests.db'
             conn = sqlite3.connect(db_path)
             cursor = conn.cursor()
             
             cursor.execute('''
-                INSERT INTO quests (title, location, objective, difficulty, reward, game_mode)
-                VALUES (?, ?, ?, ?, ?, ?)
-            ''', (title, location, objective, difficulty, reward, game_mode))
+                INSERT INTO quests (user_github_id, title, location, objective, difficulty, reward, game_mode)
+                VALUES (?, ?, ?, ?, ?, ?, ?)
+            ''', (user_github_id, title, location, objective, difficulty, reward, game_mode))
             
             quest_id = cursor.lastrowid
             conn.commit()
             conn.close()
+            
+            print(f"✨ Quest created successfully with ID: {quest_id}")
             
             # Return the quest data
             quest = {
@@ -287,17 +304,32 @@ class QuestAPI(Resource):
             return quest, 201
             
         except Exception as e:
+            print(f"💥 Error creating quest: {str(e)}")
+            import traceback
+            traceback.print_exc()
             return {'message': f'Error creating quest: {str(e)}'}, 500
     
     def get(self):
-        """Get all quests from the quest log"""
+        """Get all quests for a specific user"""
         try:
+            # Get user_github_id from query parameters
+            user_github_id = request.args.get('userGithubId', '').strip()
+            
+            if not user_github_id:
+                return {'message': 'User GitHub ID is required'}, 400
+            
             db_path = 'instance/rpg_quests.db'
             conn = sqlite3.connect(db_path)
             conn.row_factory = sqlite3.Row
             cursor = conn.cursor()
             
-            cursor.execute('SELECT * FROM quests ORDER BY created_at DESC')
+            # Only get quests for this specific user
+            cursor.execute('''
+                SELECT * FROM quests 
+                WHERE user_github_id = ? 
+                ORDER BY created_at DESC
+            ''', (user_github_id,))
+            
             rows = cursor.fetchall()
             conn.close()
             
