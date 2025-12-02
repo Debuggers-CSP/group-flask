@@ -11,11 +11,22 @@ from datetime import datetime
 rpg_api = Blueprint('rpg_api', __name__)
 api = Api(rpg_api)
 
+# Helper function to get the correct database path
+def get_rpg_db_path():
+    """Get the absolute path to the RPG database"""
+    import os
+    from flask import current_app
+    try:
+        app_root = current_app.root_path
+    except:
+        app_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    return os.path.join(app_root, 'instance', 'rpg', 'rpg.db')
+
 # Initialize RPG database with all tables
 def init_rpg_db():
     """Initialize SQLite database for RPG game with character sheets and quests tables"""
-    db_path = 'instance/rpg.db'
-    os.makedirs('instance', exist_ok=True)
+    db_path = get_rpg_db_path()
+    os.makedirs(os.path.dirname(db_path), exist_ok=True)
     
     conn = sqlite3.connect(db_path)
     cursor = conn.cursor()
@@ -134,6 +145,15 @@ class CharacterAPI(Resource):
         try:
             data = request.get_json()
             
+            # CRITICAL DEBUG LOGGING
+            print("\n" + "="*80)
+            print("🔥 CHARACTER CREATION REQUEST RECEIVED")
+            print("="*80)
+            print(f"📦 Full request data: {data}")
+            print(f"🔑 Data keys: {list(data.keys()) if data else 'NO DATA'}")
+            print(f"👤 userGithubId value: '{data.get('userGithubId', 'NOT PROVIDED')}'")
+            print("="*80 + "\n")
+            
             # Extract form data
             name = data.get('name', '').strip()
             motivation = data.get('motivation', '').strip()
@@ -166,11 +186,16 @@ class CharacterAPI(Resource):
             # Get user GitHub ID if provided (for saving to database)
             user_github_id = data.get('userGithubId', '').strip()
             
+            print(f"\n🔍 ATTEMPTING TO SAVE CHARACTER:")
+            print(f"   User GitHub ID: '{user_github_id}'")
+            print(f"   Character Name: '{name}'")
+            
             # Save to database if user is logged in
             character_id = None
             if user_github_id:
+                print(f"   ✅ User ID provided - will save to database")
                 try:
-                    db_path = 'instance/rpg.db'
+                    db_path = get_rpg_db_path()
                     conn = sqlite3.connect(db_path)
                     cursor = conn.cursor()
                     
@@ -182,9 +207,12 @@ class CharacterAPI(Resource):
                     character_id = cursor.lastrowid
                     conn.commit()
                     conn.close()
-                    print(f"💾 Character sheet saved to database with ID: {character_id}")
+                    print(f"   💾 ✅ Character saved to database with ID: {character_id}\n")
                 except Exception as db_error:
-                    print(f"⚠️ Failed to save character to database: {db_error}")
+                    print(f"   ❌ Failed to save character to database: {db_error}\n")
+            else:
+                print(f"   ⚠️  NO USER ID - Character will NOT be saved to database!\n")
+                print(f"   ⚠️  Frontend must send 'userGithubId' in the request body.\n")
             
             # Create character sheet response
             character_sheet = {
@@ -211,7 +239,7 @@ class CharacterAPI(Resource):
             if not user_github_id:
                 return {'message': 'User GitHub ID is required'}, 400
             
-            db_path = 'instance/rpg.db'
+            db_path = get_rpg_db_path()
             conn = sqlite3.connect(db_path)
             conn.row_factory = sqlite3.Row
             cursor = conn.cursor()
@@ -356,7 +384,7 @@ class QuestAPI(Resource):
                 return {'message': f'Missing required fields: {", ".join(missing)}'}, 400
             
             # Save to database with user association
-            db_path = 'instance/rpg.db'
+            db_path = get_rpg_db_path()
             conn = sqlite3.connect(db_path)
             cursor = conn.cursor()
             
@@ -399,7 +427,7 @@ class QuestAPI(Resource):
             if not user_github_id:
                 return {'message': 'User GitHub ID is required'}, 400
             
-            db_path = 'instance/rpg.db'
+            db_path = get_rpg_db_path()
             conn = sqlite3.connect(db_path)
             conn.row_factory = sqlite3.Row
             cursor = conn.cursor()
@@ -435,7 +463,7 @@ class QuestAPI(Resource):
 api.add_resource(RPGDataAPI, '/api/rpg/data')
 api.add_resource(RPGLoginAPI, '/api/rpg/login')
 api.add_resource(CharacterAPI, '/api/rpg/character')
-api.add_resource(QuestAPI, '/api/rpg/quest')
+api.add_resource(QuestAPI, '/api/rpg/quest', '/api/rpg/quests')  # Support both singular and plural
 
 # HTML endpoint for testing
 @rpg_api.route('/rpg')
