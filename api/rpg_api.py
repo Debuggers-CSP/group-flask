@@ -3,10 +3,41 @@ from flask import Blueprint, jsonify, request, current_app
 from flask_restful import Api, Resource
 import requests
 from model.rpg_user import RPGUser
+import sqlite3
+import os
+from datetime import datetime
 
 # Create Blueprint
 rpg_api = Blueprint('rpg_api', __name__)
 api = Api(rpg_api)
+
+# Initialize quest database
+def init_quest_db():
+    """Initialize SQLite database for quest tracking"""
+    db_path = 'instance/rpg_quests.db'
+    os.makedirs('instance', exist_ok=True)
+    
+    conn = sqlite3.connect(db_path)
+    cursor = conn.cursor()
+    
+    cursor.execute('''
+        CREATE TABLE IF NOT EXISTS quests (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            title TEXT NOT NULL,
+            location TEXT NOT NULL,
+            objective TEXT NOT NULL,
+            difficulty TEXT NOT NULL,
+            reward TEXT NOT NULL,
+            game_mode TEXT NOT NULL,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        )
+    ''')
+    
+    conn.commit()
+    conn.close()
+
+# Call this when the module loads
+init_quest_db()
 
 # --- API Resource for RPG User Registration and Retrieval ---
 class RPGDataAPI(Resource):
@@ -209,10 +240,89 @@ Keep the tone dynamic, compelling, and focused on adventure and conflict."""
         else:
             return f"{name} is driven by a powerful motivation that will push them through the most dangerous quests. Their greatest fear creates internal conflict that adds depth to their journey, while their hidden secret provides opportunities for dramatic revelation. This character's motivation and fear are in tension, creating a compelling arc where they must face what they fear most to achieve what they desire."
 
+# --- API Resource for Quest Creation and Retrieval ---
+class QuestAPI(Resource):
+    def post(self):
+        """Create a new quest and add to quest log"""
+        try:
+            data = request.get_json()
+            
+            # Extract quest data
+            title = data.get('title', '').strip()
+            location = data.get('location', '').strip()
+            objective = data.get('objective', '').strip()
+            difficulty = data.get('difficulty', '').strip()
+            reward = data.get('reward', '').strip()
+            game_mode = data.get('gameMode', 'action')
+            
+            # Validate required fields
+            if not all([title, location, objective, difficulty, reward]):
+                return {'message': 'All fields are required'}, 400
+            
+            # Save to database
+            db_path = 'instance/rpg_quests.db'
+            conn = sqlite3.connect(db_path)
+            cursor = conn.cursor()
+            
+            cursor.execute('''
+                INSERT INTO quests (title, location, objective, difficulty, reward, game_mode)
+                VALUES (?, ?, ?, ?, ?, ?)
+            ''', (title, location, objective, difficulty, reward, game_mode))
+            
+            quest_id = cursor.lastrowid
+            conn.commit()
+            conn.close()
+            
+            # Return the quest data
+            quest = {
+                'id': quest_id,
+                'title': title,
+                'location': location,
+                'objective': objective,
+                'difficulty': difficulty,
+                'reward': reward,
+                'gameMode': game_mode
+            }
+            
+            return quest, 201
+            
+        except Exception as e:
+            return {'message': f'Error creating quest: {str(e)}'}, 500
+    
+    def get(self):
+        """Get all quests from the quest log"""
+        try:
+            db_path = 'instance/rpg_quests.db'
+            conn = sqlite3.connect(db_path)
+            conn.row_factory = sqlite3.Row
+            cursor = conn.cursor()
+            
+            cursor.execute('SELECT * FROM quests ORDER BY created_at DESC')
+            rows = cursor.fetchall()
+            conn.close()
+            
+            quests = []
+            for row in rows:
+                quests.append({
+                    'id': row['id'],
+                    'title': row['title'],
+                    'location': row['location'],
+                    'objective': row['objective'],
+                    'difficulty': row['difficulty'],
+                    'reward': row['reward'],
+                    'gameMode': row['game_mode']
+                })
+            
+            return {'quests': quests}, 200
+            
+        except Exception as e:
+            return {'message': f'Error retrieving quests: {str(e)}'}, 500
+
 # Register API endpoints
 api.add_resource(RPGDataAPI, '/api/rpg/data')
 api.add_resource(RPGLoginAPI, '/api/rpg/login')
 api.add_resource(CharacterAPI, '/api/rpg/character')
+api.add_resource(QuestAPI, '/api/rpg/quest')
 
 # HTML endpoint for testing
 @rpg_api.route('/rpg')
