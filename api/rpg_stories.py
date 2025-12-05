@@ -1,12 +1,12 @@
 # RPG Story Elements Data Management
 # This file handles story element data storage and voting (love/skip counts)
-# Similar to jokes.py but for RPG story elements
+# Updated to limit each category to 5 items
 
 import random, json, os, fcntl
 from flask import current_app
 
 # ============================================================================
-# INITIAL STORY DATA
+# INITIAL STORY DATA - LIMITED TO 5 ITEMS PER CATEGORY
 # ============================================================================
 story_data_initial = {
     "Main Plot Hooks": [
@@ -14,60 +14,42 @@ story_data_initial = {
         "An ancient prophecy predicts the chosen one's arrival",
         "The king has been replaced by a doppelganger",
         "A dragon demands tribute from the local village",
-        "Strange portals are opening across the realm",
-        "An old friend sends a desperate letter asking for help",
-        "A valuable artifact has been stolen from the temple",
-        "The moon hasn't risen for three nights in a row"
+        "Strange portals are opening across the realm"
     ],
     "Side Quests": [
         "Help the baker retrieve stolen recipes from bandits",
         "Investigate mysterious sounds in the abandoned mill",
         "Escort a merchant caravan through dangerous territory",
         "Find a rare herb to cure the herbalist's sick child",
-        "Solve the riddle of the ancient standing stones",
-        "Help reunite two star-crossed lovers from rival families",
-        "Track down a mischievous sprite causing havoc in town",
-        "Recover a family heirloom from a haunted mansion"
+        "Solve the riddle of the ancient standing stones"
     ],
     "Character Motivations": [
         "Seeking revenge for a loved one's death",
         "Trying to prove themselves to their family",
         "Running from a dark past",
         "Searching for a missing person",
-        "Driven by insatiable curiosity",
-        "Protecting their homeland from danger",
-        "Seeking redemption for past mistakes",
-        "Pursuing wealth and fame"
+        "Driven by insatiable curiosity"
     ],
     "Locations": [
         "A bustling port city with diverse cultures",
         "An ancient forest filled with magical creatures",
         "A mysterious floating island in the sky",
         "Underground caverns with bioluminescent fungi",
-        "A desert oasis hiding ancient secrets",
-        "A frozen tundra with ice castles",
-        "A volcanic region with fire elementals",
-        "A haunted swamp with will-o'-wisps"
+        "A desert oasis hiding ancient secrets"
     ],
     "NPCs": [
         "A wise old wizard with a mysterious past",
         "A cunning thief with a heart of gold",
         "A gruff blacksmith hiding a gentle soul",
         "A cheerful innkeeper who knows everyone's secrets",
-        "A noble knight struggling with their vows",
-        "A street urchin with surprising knowledge",
-        "A eccentric inventor creating magical devices",
-        "A mysterious fortune teller who speaks in riddles"
+        "A noble knight struggling with their vows"
     ],
     "Twists": [
         "The villain is actually trying to prevent a greater evil",
         "The quest giver has been lying about their true intentions",
         "The artifact is cursed and corrupts those who possess it",
         "Time is running backwards in this location",
-        "The party member is secretly a spy",
-        "The monster is actually an enchanted person",
-        "The treasure map leads to a trap",
-        "The prophecy was a trick to manipulate events"
+        "The party member is secretly a spy"
     ]
 }
 
@@ -127,10 +109,10 @@ def initStoryElements():
             item_id += 1
     
     # Prime some love/skip responses for initial data
-    for i in range(15):
+    for i in range(10):
         id = random.randint(0, len(story_data) - 1)
         story_data[id]['love'] += 1
-    for i in range(8):
+    for i in range(5):
         id = random.randint(0, len(story_data) - 1)
         story_data[id]['skip'] += 1
     
@@ -239,3 +221,6 @@ if __name__ == "__main__":
     # Use for reference only
     print("Story elements data management module")
     print("This module requires Flask app context to run")
+    print("\nCategories: 6")
+    print("Items per category: 5")
+    print("Total items: 30")
