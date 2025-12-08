@@ -651,6 +651,7 @@ api.add_resource(RPGLoginAPI, '/api/rpg/login')
 # Character and Quest endpoints
 api.add_resource(CharacterAPI, '/api/rpg/character')
 api.add_resource(QuestAPI, '/api/rpg/quest', '/api/rpg/quests')  # Support both singular and plural
+api.add_resource(KeyBindingAPI, '/api/rpg/keybindings')
 
 # Story Elements endpoints
 api.add_resource(StoryElementsAPI, '/api/rpg/story', '/api/rpg/story/')
