@@ -137,16 +137,14 @@ class RPGLoginAPI(Resource):
         if not login_data:
             return {"message": "No data provided"}, 400
         
-        first_name = login_data.get('FirstName')
-        last_name = login_data.get('LastName')
         github_id = login_data.get('GitHubID')
         password = login_data.get('Password')
         
-        if not first_name or not last_name or not github_id or not password:
-            return {"message": "FirstName, LastName, GitHubID, and Password are required"}, 400
+        if not github_id or not password:
+            return {"message": "GitHubID and Password are required"}, 400
         
-        # Find user in database and verify password
-        user = RPGUser.find_by_credentials(first_name, last_name, github_id, password)
+        # Find user in database by GitHub ID and verify password
+        user = RPGUser.find_by_github_id_and_password(github_id, password)
         
         if user:
             return {

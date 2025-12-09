@@ -9,6 +9,8 @@ from flask import current_app
 from werkzeug.security import generate_password_hash
 from dotenv import load_dotenv
 from api.jwt_authorize import token_required
+from model.character import CharacterSheet
+from model.quest import Quest
 
 
 # import "objects" from "this" project
@@ -29,6 +31,7 @@ from api.classroom_api import classroom_api
 from hacks.joke import joke_api  # Import the joke API blueprint
 from api.post import post_api  # Import the social media post API
 from api.rpg_api import rpg_api  # Import the RPG game API
+from api.rpg_stats_api import rpg_stats_api, init_rpg_stats
 #from api.announcement import announcement_api ##temporary revert
 
 # database Initialization functions
@@ -84,6 +87,7 @@ app.register_blueprint(feedback_api)
 app.register_blueprint(joke_api)  # Register the joke API blueprint
 app.register_blueprint(post_api)  # Register the social media post API
 app.register_blueprint(rpg_api)  # Register the RPG game API
+app.register_blueprint(rpg_stats_api)
 # app.register_blueprint(announcement_api) ##temporary revert
 
 # Jokes file initialization
@@ -91,7 +95,9 @@ with app.app_context():
     initJokes()
     initStoryElements()  # Initialize story elements
     initRPGUsers()  # Initialize RPG users table
-
+    init_rpg_stats()
+    CharacterSheet.metadata.create_all(bind=db.get_engine(bind='rpg'))
+    Quest.metadata.create_all(bind=db.get_engine(bind='rpg'))
 # Tell Flask-Login the view function name of your login route
 login_manager.login_view = "login"
 
@@ -164,8 +170,48 @@ def sections():
 
 @app.route('/rpg_stats/')
 def rpg_stats():
-    rpg_users = RPGUser.query.all()
-    return render_template("rpg_stats.html", rpg_users=rpg_users)
+    try:
+        print("=== DEBUG rpg_stats ===")
+        
+        # 获取所有RPG用户
+        rpg_users = RPGUser.query.all()
+        print(f"RPG Users: {len(rpg_users)}")
+        
+        # 获取所有角色表
+        character_sheets = CharacterSheet.query.all()
+        print(f"Character Sheets: {len(character_sheets)}")
+        
+        # 获取所有任务
+        quests = Quest.query.all()
+        print(f"Quests: {len(quests)}")
+        
+        print("=== END DEBUG ===")
+        
+        # 把三个变量都传递给模板
+        return render_template(
+            "rpg_stats.html", 
+            rpg_users=rpg_users,
+            character_sheets=character_sheets,
+            quests=quests
+        )
+    except Exception as e:
+        print(f"ERROR in rpg_stats route: {e}")
+        import traceback
+        traceback.print_exc()
+        # 返回简化版本，但包含调试信息
+        return f"""
+        <h1>RPG System Admin Dashboard</h1>
+        <div class="alert alert-danger">
+            <h4>Error Loading Data</h4>
+            <p>{str(e)}</p>
+            <pre>{traceback.format_exc()}</pre>
+        </div>
+        <div class="alert alert-info">
+            <p>RPG Users: {RPGUser.query.count()}</p>
+            <p>Character Sheets: {CharacterSheet.query.count() if 'CharacterSheet' in globals() else 0}</p>
+            <p>Quests: {Quest.query.count() if 'Quest' in globals() else 0}</p>
+        </div>
+        """
 
 # Helper function to extract uploads for a user (ie PFP image)
 @app.route('/uploads/<path:filename>')
@@ -332,3 +378,5 @@ if __name__ == "__main__":
     port = app.config['FLASK_PORT']
     print(f"** Server running: http://localhost:{port}")  # Pretty link
     app.run(debug=True, host=host, port=port, use_reloader=False)
+
+  
