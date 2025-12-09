@@ -137,6 +137,24 @@ class RPGUser(db.Model):
             RPGUser object if found, None otherwise
         """
         return RPGUser.query.filter_by(_github_id=github_id).first()
+    
+    @staticmethod
+    def find_by_github_id_and_password(github_id, password):
+        """
+        Find a user by their GitHub ID and verify their password
+        
+        Args:
+            github_id: User's GitHub ID
+            password: Plain text password to verify
+            
+        Returns:
+            RPGUser object if found and password matches, None otherwise
+        """
+        user = RPGUser.query.filter_by(_github_id=github_id).first()
+        
+        if user and user.is_password(password):
+            return user
+        return None
 
 
 def initRPGUsers():
