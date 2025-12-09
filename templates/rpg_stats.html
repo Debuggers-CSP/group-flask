@@ -5,12 +5,29 @@
   .white-text {
     color: white !important;
   }
+  .table-container {
+    margin-bottom: 40px;
+  }
+  h2.table-title {
+    border-bottom: 2px solid #666;
+    padding-bottom: 10px;
+    margin-bottom: 20px;
+  }
+  .text-truncate-custom {
+    max-width: 200px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
 </style>
 
 <div class="container mt-4 white-text">
-  <h1 class="mb-4">RPG User Stats</h1>
+  <h1 class="mb-4">RPG System Admin Dashboard</h1>
 
+  <!-- RPG Users Table -->
   {% if rpg_users and rpg_users|length %}
+  <div class="table-container">
+    <h2 class="table-title">RPG Users</h2>
     <table class="table table-striped table-bordered table-dark">
       <thead>
         <tr>
@@ -18,6 +35,7 @@
           <th>First Name</th>
           <th>Last Name</th>
           <th>GitHub ID</th>
+          <th>Actions</th>
         </tr>
       </thead>
       <tbody>
@@ -26,13 +44,311 @@
           <td>{{ user.id }}</td>
           <td>{{ user.first_name }}</td>
           <td>{{ user.last_name }}</td>
-          <td>{{ user.github_id }}</td>
+          <td>
+            <a href="https://github.com/{{ user.github_id }}" target="_blank" class="text-info">
+              {{ user.github_id }}
+            </a>
+          </td>
+          <td>
+            <a href="/admin/user/{{ user.github_id }}" class="btn btn-sm btn-primary">View Details</a>
+          </td>
         </tr>
         {% endfor %}
       </tbody>
+      <tfoot>
+        <tr>
+          <td colspan="5" class="text-end">
+            Total: {{ rpg_users|length }} users
+          </td>
+        </tr>
+      </tfoot>
     </table>
+  </div>
   {% else %}
-    <p class="white-text">No RPG users found.</p>
+    <div class="alert alert-warning">
+      <h4>No RPG Users Found</h4>
+      <p>No RPG user data available.</p>
+    </div>
   {% endif %}
+
+  <!-- Character Sheets Table -->
+  {% if character_sheets and character_sheets|length %}
+  <div class="table-container">
+    <h2 class="table-title">Character Sheets</h2>
+    <table class="table table-striped table-bordered table-dark">
+      <thead>
+        <tr>
+          <th>ID</th>
+          <th>GitHub ID</th>
+          <th>Character Name</th>
+          <th>Game Mode</th>
+          <th>Motivation</th>
+          <th>Fear</th>
+          <th>Secret</th>
+          <th>Created At</th>
+          <th>Actions</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for character in character_sheets %}
+        <tr>
+          <td>{{ character.id }}</td>
+          <td>
+            <a href="https://github.com/{{ character.user_github_id }}" target="_blank" class="text-info">
+              {{ character.user_github_id }}
+            </a>
+          </td>
+          <td><strong>{{ character.name }}</strong></td>
+          <td>
+            <span class="badge {% if character.game_mode == 'Adventure' %}bg-success{% else %}bg-primary{% endif %}">
+              {{ character.game_mode }}
+            </span>
+          </td>
+          <td>
+            <div class="text-truncate-custom" title="{{ character.motivation }}">
+              {{ character.motivation }}
+            </div>
+          </td>
+          <td>
+            <div class="text-truncate-custom" style="max-width: 150px;" title="{{ character.fear }}">
+              {{ character.fear }}
+            </div>
+          </td>
+          <td>
+            <div class="text-truncate-custom" style="max-width: 150px;" title="{{ character.secret }}">
+              {{ character.secret }}
+            </div>
+          </td>
+          <!-- 修复这里：使用strftime格式化日期 -->
+          <td>{{ character.created_at.strftime('%Y-%m-%d') if character.created_at else 'N/A' }}</td>
+          <td>
+            <button type="button" class="btn btn-sm btn-info" 
+                    data-bs-toggle="modal" 
+                    data-bs-target="#analysisModal{{ character.id }}">
+              View Analysis
+            </button>
+          </td>
+        </tr>
+        
+        <!-- Analysis Modal -->
+        <div class="modal fade" id="analysisModal{{ character.id }}" tabindex="-1">
+          <div class="modal-dialog modal-lg">
+            <div class="modal-content bg-dark text-white">
+              <div class="modal-header">
+                <h5 class="modal-title">{{ character.name }} - Character Analysis</h5>
+                <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+              </div>
+              <div class="modal-body">
+                <h6>Basic Information</h6>
+                <p><strong>User:</strong> {{ character.user_github_id }}</p>
+                <p><strong>Game Mode:</strong> {{ character.game_mode }}</p>
+                <p><strong>Created At:</strong> {{ character.created_at.strftime('%Y-%m-%d %H:%M:%S') if character.created_at else 'N/A' }}</p>
+                
+                <hr>
+                
+                <h6>Character Details</h6>
+                <p><strong>Motivation:</strong> {{ character.motivation }}</p>
+                <p><strong>Fear:</strong> {{ character.fear }}</p>
+                <p><strong>Secret:</strong> {{ character.secret }}</p>
+                
+                <hr>
+                
+                <h6>AI Analysis</h6>
+                <div class="p-3 bg-secondary bg-opacity-25 rounded">
+                  {{ character.analysis|safe if character.analysis else 'No analysis available.' }}
+                </div>
+              </div>
+              <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Close</button>
+              </div>
+            </div>
+          </div>
+        </div>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% else %}
+    <div class="alert alert-info">
+      <h4>No Character Sheets</h4>
+      <p>No character sheet data available.</p>
+    </div>
+  {% endif %}
+
+  <!-- Quests Table -->
+  {% if quests and quests|length %}
+  <div class="table-container">
+    <h2 class="table-title">Quests</h2>
+    <table class="table table-striped table-bordered table-dark">
+      <thead>
+        <tr>
+          <th>ID</th>
+          <th>GitHub ID</th>
+          <th>Quest Title</th>
+          <th>Location</th>
+          <th>Difficulty</th>
+          <th>Game Mode</th>
+          <th>Reward</th>
+          <th>Created At</th>
+          <th>Details</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for quest in quests %}
+        <tr>
+          <td>{{ quest.id }}</td>
+          <td>
+            <a href="https://github.com/{{ quest.user_github_id }}" target="_blank" class="text-info">
+              {{ quest.user_github_id }}
+            </a>
+          </td>
+          <td><strong>{{ quest.title }}</strong></td>
+          <td>{{ quest.location }}</td>
+          <td>
+            {% if quest.difficulty == 'Easy' %}
+            <span class="badge bg-success">{{ quest.difficulty }}</span>
+            {% elif quest.difficulty == 'Medium' %}
+            <span class="badge bg-warning">{{ quest.difficulty }}</span>
+            {% elif quest.difficulty == 'Hard' %}
+            <span class="badge bg-danger">{{ quest.difficulty }}</span>
+            {% else %}
+            <span class="badge bg-secondary">{{ quest.difficulty }}</span>
+            {% endif %}
+          </td>
+          <td>
+            <span class="badge {% if quest.game_mode == 'Adventure' %}bg-success{% else %}bg-primary{% endif %}">
+              {{ quest.game_mode }}
+            </span>
+          </td>
+          <td>
+            <div class="text-truncate-custom" style="max-width: 150px;" title="{{ quest.reward }}">
+              {{ quest.reward }}
+            </div>
+          </td>
+          <!-- 修复这里：使用strftime格式化日期 -->
+          <td>{{ quest.created_at.strftime('%Y-%m-%d') if quest.created_at else 'N/A' }}</td>
+          <td>
+            <button type="button" class="btn btn-sm btn-success" 
+                    data-bs-toggle="modal" 
+                    data-bs-target="#questModal{{ quest.id }}">
+              View Objective
+            </button>
+          </td>
+        </tr>
+        
+        <!-- Quest Details Modal -->
+        <div class="modal fade" id="questModal{{ quest.id }}" tabindex="-1">
+          <div class="modal-dialog modal-lg">
+            <div class="modal-content bg-dark text-white">
+              <div class="modal-header">
+                <h5 class="modal-title">{{ quest.title }}</h5>
+                <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+              </div>
+              <div class="modal-body">
+                <div class="row">
+                  <div class="col-md-6">
+                    <p><strong>Posted By:</strong> {{ quest.user_github_id }}</p>
+                    <p><strong>Location:</strong> {{ quest.location }}</p>
+                    <p><strong>Difficulty:</strong> 
+                      <span class="badge {% if quest.difficulty == 'Easy' %}bg-success{% elif quest.difficulty == 'Medium' %}bg-warning{% elif quest.difficulty == 'Hard' %}bg-danger{% else %}bg-secondary{% endif %}">
+                        {{ quest.difficulty }}
+                      </span>
+                    </p>
+                  </div>
+                  <div class="col-md-6">
+                    <p><strong>Game Mode:</strong> 
+                      <span class="badge {% if quest.game_mode == 'Adventure' %}bg-success{% else %}bg-primary{% endif %}">
+                        {{ quest.game_mode }}
+                      </span>
+                    </p>
+                    <p><strong>Created At:</strong> {{ quest.created_at.strftime('%Y-%m-%d %H:%M:%S') if quest.created_at else 'N/A' }}</p>
+                    <p><strong>Reward:</strong> {{ quest.reward }}</p>
+                  </div>
+                </div>
+                
+                <hr>
+                
+                <h6>Quest Objective</h6>
+                <div class="p-3 bg-secondary bg-opacity-25 rounded">
+                  {{ quest.objective|safe if quest.objective else 'No objective description available.' }}
+                </div>
+              </div>
+              <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Close</button>
+                <a href="/admin/quest/{{ quest.id }}/edit" class="btn btn-primary">Edit Quest</a>
+              </div>
+            </div>
+          </div>
+        </div>
+        {% endfor %}
+      </tbody>
+      <tfoot>
+        <tr>
+          <td colspan="9" class="text-end">
+            Total: {{ quests|length }} quests | 
+            Adventure Mode: {{ quests|selectattr('game_mode', 'equalto', 'Adventure')|list|length }} | 
+            Other Modes: {{ quests|selectattr('game_mode', 'ne', 'Adventure')|list|length }}
+          </td>
+        </tr>
+      </tfoot>
+    </table>
+  </div>
+  {% else %}
+    <div class="alert alert-info">
+      <h4>No Quests</h4>
+      <p>No quest data available.</p>
+    </div>
+  {% endif %}
+
+  <!-- Statistics Cards -->
+  <div class="row mt-5">
+    <div class="col-md-4">
+      <div class="card bg-dark text-white">
+        <div class="card-body">
+          <h5 class="card-title">User Statistics</h5>
+          <p class="display-6">{{ rpg_users|default([])|length }}</p>
+          <p class="card-text">Total Registered RPG Users</p>
+        </div>
+      </div>
+    </div>
+    <div class="col-md-4">
+      <div class="card bg-dark text-white">
+        <div class="card-body">
+          <h5 class="card-title">Character Statistics</h5>
+          <p class="display-6">{{ character_sheets|default([])|length }}</p>
+          <p class="card-text">Character Sheets Created</p>
+        </div>
+      </div>
+    </div>
+    <div class="col-md-4">
+      <div class="card bg-dark text-white">
+        <div class="card-body">
+          <h5 class="card-title">Quest Statistics</h5>
+          <p class="display-6">{{ quests|default([])|length }}</p>
+          <p class="card-text">Total Quests Posted</p>
+        </div>
+      </div>
+    </div>
+  </div>
 </div>
+
+<!-- Bootstrap JS -->
+<script src="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/js/bootstrap.bundle.min.js"></script>
+
+<script>
+// Auto-close modals when clicking outside
+document.addEventListener('DOMContentLoaded', function() {
+  var modals = document.querySelectorAll('.modal');
+  modals.forEach(function(modal) {
+    modal.addEventListener('click', function(e) {
+      if (e.target === modal) {
+        var bsModal = bootstrap.Modal.getInstance(modal);
+        if (bsModal) {
+          bsModal.hide();
+        }
+      }
+    });
+  });
+});
+</script>
 {% endblock %}
