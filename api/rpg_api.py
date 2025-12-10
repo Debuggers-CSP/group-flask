@@ -13,6 +13,35 @@ from datetime import datetime
 rpg_api = Blueprint('rpg_api', __name__)
 api = Api(rpg_api)
 
+# ---------------------------------------------------------------------------
+# API Overview / Frontend mapping
+# ---------------------------------------------------------------------------
+# This file implements the RPG-related backend used by two main frontend
+# surfaces:
+#
+# 1) The in-game RPG frontend (SPA or pages that call these endpoints):
+#    - `/rpg` (HTML test page provided by this blueprint)
+#    - Endpoints under `/api/rpg/*` used by the game UI to register/login
+#      users, save/load character sheets, quests, and key bindings.
+#    - Typical front-end files: `static/js/...` (game client), or whichever
+#      frontend calls `/api/rpg/*` routes.
+#
+# 2) The admin / dashboard pages (server-rendered templates):
+#    - `templates/rpg_stats.html` — admin dashboard that inspects RPG users,
+#      character sheets and quests. It calls the stats endpoints below to
+#      present aggregated data.
+#
+# Route groups and their frontend targets:
+# - `/api/rpg/data`         : RPG user list + registration  (game UI / admin)
+# - `/api/rpg/login`        : Login for RPG users              (game UI)
+# - `/api/rpg/character`    : Create character sheet           (game UI)
+# - `/api/rpg/quest(s)`     : Create / list quests             (game UI)
+# - `/api/rpg/keybindings`  : Save / load key bindings         (game UI)
+# - `/api/rpg/story`        : Story element browsing (used by in-game story UI)
+# - `/api/rpg_stats/*`      : RPC endpoints for aggregated stats (admin & client)
+# - `/api/stats/*`          : Legacy endpoints (kept for backward compatibility)
+# ---------------------------------------------------------------------------
+
 # Helper function to get the correct database path
 def get_rpg_db_path():
     """Get the absolute path to the RPG database"""
@@ -138,7 +167,9 @@ def init_rpg_db():
 # Call this when the module loads
 init_rpg_db()
 
-# --- API Resource for RPG User Registration and Retrieval ---
+# --- API Resource: RPG User Registration and Retrieval ---
+# Frontend: called by the game UI to register new RPG users and by admin
+# dashboards to list users. Endpoint: `/api/rpg/data`.
 class RPGDataAPI(Resource):
     def get(self):
         """Get all RPG users"""
@@ -180,7 +211,8 @@ class RPGDataAPI(Resource):
             "user": created_user.read()
         }, 201
 
-# --- API Resource for RPG User Login ---
+# --- API Resource: RPG User Login ---
+# Frontend: game login flow. Endpoint: `/api/rpg/login`.
 class RPGLoginAPI(Resource):
     def post(self):
         """Login an RPG user"""
@@ -207,7 +239,8 @@ class RPGLoginAPI(Resource):
         else:
             return {"message": "Invalid credentials"}, 401
 
-# --- API Resource for Character Creation ---
+# --- API Resource: Character Creation ---
+# Frontend: character creation UI in the game. Endpoint: `/api/rpg/character`.
 class CharacterAPI(Resource):
     def post(self):
         """Create a character sheet from form data with AI-generated analysis"""
@@ -422,6 +455,11 @@ Keep the tone dynamic, compelling, and focused on adventure and conflict."""
 
 # --- API Resource for Quest Creation and Retrieval ---
 class QuestAPI(Resource):
+    """Quest endpoints
+
+    Frontend: quest creation/listing in the game UI.
+    Endpoints: `/api/rpg/quest` and `/api/rpg/quests`.
+    """
     def post(self):
         """Create a new quest and add to quest log"""
         try:
@@ -528,6 +566,11 @@ class QuestAPI(Resource):
         except Exception as e:
             return {'message': f'Error retrieving quests: {str(e)}'}, 500# --- API Resource for Key Binding Creation and Retrieval ---
 class KeyBindingAPI(Resource):
+    """Key bindings management
+
+    Frontend: allows the game client to save and load user key bindings.
+    Endpoint: `/api/rpg/keybindings`.
+    """
     def post(self):
         """Save key bindings for a user and game mode"""
         try:
@@ -897,7 +940,11 @@ class KeyBindingAPI(Resource):
 # and voting (love/skip counts) similar to the jokes system
 
 class StoryElementsAPI(Resource):
-    """Get all story elements"""
+    """Story elements browsing
+
+    Frontend: in-game story UI that shows story elements for players.
+    Endpoint: `/api/rpg/story`.
+    """
     def get(self):
         return jsonify(getStoryElements())
 
