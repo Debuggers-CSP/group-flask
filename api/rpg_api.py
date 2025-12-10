@@ -1,5 +1,6 @@
 # RPG Game Login Backend API
 from flask import Blueprint, jsonify, request, current_app
+from contextlib import contextmanager
 from flask_restful import Api, Resource
 import requests
 from model.rpg_user import RPGUser
@@ -1015,3 +1016,159 @@ def rpg_home():
     </html>
     """
     return html_content
+
+# --- RPG Statistics (moved from api/rpg_stats_api.py) ---
+# Database file for RPG statistics (kept relative to project like the original)
+DATABASE = os.path.join('instance', 'rpg_statistics.db')
+
+# Ensure directory exists
+os.makedirs(os.path.dirname(DATABASE), exist_ok=True)
+
+# Database connection management
+@contextmanager
+def get_db():
+    conn = sqlite3.connect(DATABASE)
+    conn.row_factory = sqlite3.Row
+    try:
+        yield conn
+    finally:
+        conn.close()
+
+# Initialize stats DB
+def init_rpg_stats():
+    """Initialize RPG statistics database"""
+    with get_db() as conn:
+        cursor = conn.cursor()
+        cursor.execute('''
+            CREATE TABLE IF NOT EXISTS statistics (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                mode TEXT NOT NULL UNIQUE,
+                count INTEGER NOT NULL DEFAULT 0
+            )
+        ''')
+        cursor.execute('''
+            CREATE TABLE IF NOT EXISTS history (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                user_id TEXT NOT NULL,
+                mode TEXT NOT NULL,
+                timestamp TEXT NOT NULL
+            )
+        ''')
+        cursor.execute('SELECT COUNT(*) FROM statistics')
+        if cursor.fetchone()[0] == 0:
+            cursor.execute('INSERT INTO statistics (mode, count) VALUES (?, ?)', ('chill', 0))
+            cursor.execute('INSERT INTO statistics (mode, count) VALUES (?, ?)', ('action', 0))
+            print('✓ RPG Statistics database initialized')
+        conn.commit()
+
+
+# Helper to get statistics
+def get_statistics():
+    with get_db() as conn:
+        cursor = conn.cursor()
+        cursor.execute('SELECT mode, count FROM statistics')
+        stats_rows = cursor.fetchall()
+        stats = {'chill': 0, 'action': 0, 'total': 0}
+        for row in stats_rows:
+            mode = row['mode']
+            count = row['count']
+            stats[mode] = count
+            stats['total'] += count
+
+        cursor.execute('''
+            SELECT user_id, mode, timestamp 
+            FROM history 
+            ORDER BY id DESC 
+            LIMIT 100
+        ''')
+        history_rows = cursor.fetchall()
+
+        stats['history'] = [
+            {
+                'userId': row['user_id'],
+                'mode': row['mode'],
+                'timestamp': row['timestamp']
+            }
+            for row in history_rows
+        ]
+
+        return stats
+
+
+# Routes (kept same paths as original rpg_stats_api)
+@rpg_api.route('/api/rpg_stats/stats', methods=['GET'])
+def get_stats():
+    """GET /api/rpg_stats/stats - return statistics"""
+    try:
+        stats = get_statistics()
+        print(f'📊 Returning stats: chill={stats["chill"]}, action={stats["action"]}, total={stats["total"]}')
+        return jsonify(stats)
+    except Exception as e:
+        print(f'❌ Error getting stats: {e}')
+        return jsonify({'error': str(e)}), 500
+
+
+@rpg_api.route('/api/rpg_stats/record', methods=['GET'])
+def record_selection():
+    """GET /api/rpg_stats/record?mode=chill&userId=xxx - record a selection"""
+    try:
+        mode = request.args.get('mode')
+        user_id = request.args.get('userId', 'anonymous')
+        print(f'📝 Recording: mode={mode}, userId={user_id}')
+        if mode not in ['chill', 'action']:
+            return jsonify({'error': 'Invalid mode'}), 400
+
+        with get_db() as conn:
+            cursor = conn.cursor()
+            cursor.execute('''
+                UPDATE statistics 
+                SET count = count + 1 
+                WHERE mode = ?
+            ''', (mode,))
+            timestamp = datetime.utcnow().isoformat()
+            cursor.execute('''
+                INSERT INTO history (user_id, mode, timestamp)
+                VALUES (?, ?, ?)
+            ''', (user_id, mode, timestamp))
+            conn.commit()
+            print(f'✓ Successfully recorded {mode} selection')
+
+        stats = get_statistics()
+        return jsonify(stats)
+
+    except Exception as e:
+        print(f'❌ Error recording selection: {e}')
+        return jsonify({'error': str(e)}), 500
+
+
+@rpg_api.route('/api/rpg_stats/reset', methods=['GET', 'POST'])
+def reset_stats():
+    """GET/POST /api/rpg_stats/reset - reset statistics"""
+    try:
+        with get_db() as conn:
+            cursor = conn.cursor()
+            cursor.execute('UPDATE statistics SET count = 0')
+            cursor.execute('DELETE FROM history')
+            conn.commit()
+            print('✓ Statistics reset successfully')
+
+        stats = get_statistics()
+        return jsonify(stats)
+
+    except Exception as e:
+        print(f'❌ Error resetting stats: {e}')
+        return jsonify({'error': str(e)}), 500
+
+
+@rpg_api.route('/api/rpg_stats/health', methods=['GET'])
+def health():
+    """GET /api/rpg_stats/health - health check"""
+    return jsonify({
+        'status': 'healthy',
+        'database': DATABASE,
+        'message': 'RPG Statistics API is running'
+    })
+
+
+# Initialize the stats DB on module load
+init_rpg_stats()
