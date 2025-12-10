@@ -1170,4 +1170,76 @@ def health():
 
 
 # Initialize the stats DB on module load
+# --- Legacy `/api/stats` endpoints moved here (kept organized) ---
+
+@rpg_api.route('/api/stats', methods=['GET'])
+def get_stats_legacy():
+    """GET /api/stats - return statistics (legacy route)"""
+    try:
+        stats = get_statistics()
+        return jsonify(stats)
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+
+@rpg_api.route('/api/stats/record', methods=['GET', 'POST'])
+def record_selection_legacy():
+    """Record a selection via GET or POST (legacy route)"""
+    try:
+        if request.method == 'GET':
+            mode = request.args.get('mode')
+            user_id = request.args.get('userId', 'anonymous')
+        else:
+            data = request.get_json() or {}
+            mode = data.get('mode')
+            user_id = data.get('userId', 'anonymous')
+
+        if mode not in ['chill', 'action']:
+            return jsonify({'error': 'Invalid mode'}), 400
+
+        with get_db() as conn:
+            cursor = conn.cursor()
+            cursor.execute('''
+                UPDATE statistics
+                SET count = count + 1
+                WHERE mode = ?
+            ''', (mode,))
+            timestamp = datetime.utcnow().isoformat()
+            cursor.execute('''
+                INSERT INTO history (user_id, mode, timestamp)
+                VALUES (?, ?, ?)
+            ''', (user_id, mode, timestamp))
+            conn.commit()
+
+        stats = get_statistics()
+        return jsonify(stats)
+
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+
+@rpg_api.route('/api/stats/reset', methods=['GET', 'POST'])
+def reset_stats_legacy():
+    """Reset statistics (legacy route)"""
+    try:
+        with get_db() as conn:
+            cursor = conn.cursor()
+            cursor.execute('UPDATE statistics SET count = 0')
+            cursor.execute('DELETE FROM history')
+            conn.commit()
+
+        stats = get_statistics()
+        return jsonify(stats)
+
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+
+@rpg_api.route('/api/stats/health', methods=['GET'])
+def stats_health_legacy():
+    """Legacy health check for /api/stats"""
+    return jsonify({'status': 'healthy', 'database': DATABASE})
+
+
+# Initialize the stats DB on module load
 init_rpg_stats()
