@@ -3,7 +3,7 @@
     "id": 0,
     "category": "Main Plot Hooks",
     "element": "A mysterious plague is turning villagers to stone",
-    "love": 4,
+    "love": 10,
     "skip": 0
   },
   {
@@ -24,7 +24,7 @@
     "id": 3,
     "category": "Main Plot Hooks",
     "element": "A dragon demands tribute from the local village",
-    "love": 11,
+    "love": 13,
     "skip": 0
   },
   {
@@ -74,7 +74,7 @@
     "category": "Character Motivations",
     "element": "Seeking revenge for a loved one's death",
     "love": 0,
-    "skip": 0
+    "skip": 1
   },
   {
     "id": 11,

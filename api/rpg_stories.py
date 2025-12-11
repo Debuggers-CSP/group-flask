@@ -217,7 +217,6 @@ def getCategories():
 # ============================================================================
 
 if __name__ == "__main__":
-    # Note: This won't work standalone since it needs Flask app context
     # Use for reference only
     print("Story elements data management module")
     print("This module requires Flask app context to run")
