@@ -4,10 +4,11 @@ from contextlib import contextmanager
 from flask_restful import Api, Resource
 import requests
 from model.rpg_user import RPGUser
+from model.user import User
 from api.rpg_stories import *  # Story elements data management
 import sqlite3
 import os
-from datetime import datetime
+from datetime import datetime  # still used elsewhere in file
 
 # Create Blueprint
 rpg_api = Blueprint('rpg_api', __name__)
@@ -58,10 +59,10 @@ def init_rpg_db():
     """Initialize SQLite database for RPG game with character sheets and quests tables"""
     db_path = get_rpg_db_path()
     os.makedirs(os.path.dirname(db_path), exist_ok=True)
-    
+
     conn = sqlite3.connect(db_path)
     cursor = conn.cursor()
-    
+
     # Create character_sheets table
     cursor.execute('''
         CREATE TABLE IF NOT EXISTS character_sheets (
@@ -76,7 +77,7 @@ def init_rpg_db():
             created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
         )
     ''')
-    
+
     # Create quests table
     cursor.execute('''
         CREATE TABLE IF NOT EXISTS quests (
@@ -159,8 +160,6 @@ def init_rpg_db():
         )
     ''')
 
-
-    
     conn.commit()
     conn.close()
 
@@ -168,85 +167,66 @@ def init_rpg_db():
 init_rpg_db()
 
 # --- API Resource: RPG User Registration and Retrieval ---
-# Frontend: called by the game UI to register new RPG users and by admin
-# dashboards to list users. Endpoint: `/api/rpg/data`.
 class RPGDataAPI(Resource):
-    def get(self):
-        """Get all RPG users"""
-        users = RPGUser.query.all()
-        return jsonify([user.read() for user in users])
-
     def post(self):
-        """Register a new RPG user"""
-        user_data = request.get_json()
-        
-        # Validate input
-        if not user_data:
-            return {"message": "No data provided"}, 400
-        
-        required_fields = ['FirstName', 'LastName', 'GitHubID', 'Password']
-        for field in required_fields:
-            if field not in user_data or not user_data[field]:
-                return {"message": f"{field} is required"}, 400
-        
-        # Check if user already exists
-        existing_user = RPGUser.find_by_github_id(user_data['GitHubID'])
-        if existing_user:
-            return {"message": "User with this GitHub ID already exists"}, 409
-        
-        # Create new user
-        new_user = RPGUser(
-            first_name=user_data['FirstName'],
-            last_name=user_data['LastName'],
-            github_id=user_data['GitHubID'],
-            password=user_data['Password']
+        user_data = request.get_json(silent=True) or {}
+
+        first_name = (user_data.get("FirstName") or "").strip()
+        last_name  = (user_data.get("LastName") or "").strip()
+        github_id  = (user_data.get("GitHubID") or "").strip()
+        password   = (user_data.get("Password") or "").strip()
+
+        if not all([first_name, last_name, github_id, password]):
+            return {"message": "All fields are required"}, 400
+
+        # ✅ CREATE RPG USER (not User)
+        user = RPGUser(
+            first_name=first_name,
+            last_name=last_name,
+            github_id=github_id,
+            password=password
         )
-        
-        created_user = new_user.create()
+
+        created_user = user.create()
         if created_user is None:
-            return {"message": "Failed to create user"}, 500
-        
+            return {"message": "GitHubID already exists"}, 409
+
         return {
-            "message": "User registered successfully",
+            "message": "RPG user registered successfully",
             "user": created_user.read()
         }, 201
 
+
 # --- API Resource: RPG User Login ---
-# Frontend: game login flow. Endpoint: `/api/rpg/login`.
 class RPGLoginAPI(Resource):
     def post(self):
-        """Login an RPG user"""
-        login_data = request.get_json()
-        
-        # Validate input
-        if not login_data:
-            return {"message": "No data provided"}, 400
-        
-        github_id = login_data.get('GitHubID')
-        password = login_data.get('Password')
-        
+        login_data = request.get_json() or {}
+
+        github_id = (login_data.get('GitHubID') or '').strip()
+        password = (login_data.get('Password') or '').strip()
+
         if not github_id or not password:
             return {"message": "GitHubID and Password are required"}, 400
-        
-        # Find user in database by GitHub ID and verify password
+
+        # Verify against RPG user table
         user = RPGUser.find_by_github_id_and_password(github_id, password)
-        
-        if user:
-            return {
-                "message": "Login successful",
-                "user": user.read()
-            }, 200
-        else:
+        if not user:
             return {"message": "Invalid credentials"}, 401
 
+        # ✅ Option A: return success + user info (frontend stores session locally)
+        return {
+            "message": "Login successful",
+            "user": user.read()
+        }, 200
+
+
 # --- API Resource: Character Creation ---
-# Frontend: character creation UI in the game. Endpoint: `/api/rpg/character`.
 class CharacterAPI(Resource):
     def post(self):
         """Create a character sheet from form data with AI-generated analysis"""
         try:
             data = request.get_json()
-            
+
             # CRITICAL DEBUG LOGGING
             print("\n" + "="*80)
             print("🔥 CHARACTER CREATION REQUEST RECEIVED")
@@ -255,24 +235,24 @@ class CharacterAPI(Resource):
             print(f"🔑 Data keys: {list(data.keys()) if data else 'NO DATA'}")
             print(f"👤 userGithubId value: '{data.get('userGithubId', 'NOT PROVIDED')}'")
             print("="*80 + "\n")
-            
+
             # Extract form data
             name = data.get('name', '').strip()
             motivation = data.get('motivation', '').strip()
             fear = data.get('fear', '').strip()
             secret = data.get('secret', '').strip()
             game_mode = data.get('gameMode', 'action')
-            
+
             # Validate required fields
             if not all([name, motivation, fear, secret]):
                 return {'message': 'All fields are required'}, 400
-            
+
             # Get Groq API key
             api_key = current_app.config.get('GROQ_API_KEY')
-            
+
             # Log API key status for debugging
             current_app.logger.info(f"GROQ API Key configured: {bool(api_key)}")
-            
+
             if not api_key:
                 # Fallback to basic analysis if API key not configured
                 current_app.logger.warning("GROQ_API_KEY not found, using basic analysis")
@@ -284,14 +264,14 @@ class CharacterAPI(Resource):
                 print(f"✅ GROQ_API_KEY found - generating AI analysis for {name}")
                 analysis = self._generate_ai_analysis(name, motivation, fear, secret, game_mode, api_key)
                 print(f"📝 AI Analysis generated: {analysis[:100]}...")
-            
+
             # Get user GitHub ID if provided (for saving to database)
             user_github_id = data.get('userGithubId', '').strip()
-            
+
             print(f"\n🔍 ATTEMPTING TO SAVE CHARACTER:")
             print(f"   User GitHub ID: '{user_github_id}'")
             print(f"   Character Name: '{name}'")
-            
+
             # Save to database if user is logged in
             character_id = None
             if user_github_id:
@@ -300,12 +280,12 @@ class CharacterAPI(Resource):
                     db_path = get_rpg_db_path()
                     conn = sqlite3.connect(db_path)
                     cursor = conn.cursor()
-                    
+
                     cursor.execute('''
                         INSERT INTO character_sheets (user_github_id, name, motivation, fear, secret, game_mode, analysis)
                         VALUES (?, ?, ?, ?, ?, ?, ?)
                     ''', (user_github_id, name, motivation, fear, secret, game_mode, analysis))
-                    
+
                     character_id = cursor.lastrowid
                     conn.commit()
                     conn.close()
@@ -315,7 +295,7 @@ class CharacterAPI(Resource):
             else:
                 print(f"   ⚠️  NO USER ID - Character will NOT be saved to database!\n")
                 print(f"   ⚠️  Frontend must send 'userGithubId' in the request body.\n")
-            
+
             # Create character sheet response
             character_sheet = {
                 'id': character_id,
@@ -326,36 +306,36 @@ class CharacterAPI(Resource):
                 'gameMode': game_mode,
                 'analysis': analysis
             }
-            
+
             return character_sheet, 200
-            
+
         except Exception as e:
             return {'message': f'Error creating character: {str(e)}'}, 500
-    
+
     def get(self):
         """Get all character sheets for a specific user"""
         try:
             # Get user_github_id from query parameters
             user_github_id = request.args.get('userGithubId', '').strip()
-            
+
             if not user_github_id:
                 return {'message': 'User GitHub ID is required'}, 400
-            
+
             db_path = get_rpg_db_path()
             conn = sqlite3.connect(db_path)
             conn.row_factory = sqlite3.Row
             cursor = conn.cursor()
-            
+
             # Only get characters for this specific user
             cursor.execute('''
                 SELECT * FROM character_sheets 
                 WHERE user_github_id = ? 
                 ORDER BY created_at DESC
             ''', (user_github_id,))
-            
+
             rows = cursor.fetchall()
             conn.close()
-            
+
             characters = []
             for row in rows:
                 characters.append({
@@ -368,12 +348,12 @@ class CharacterAPI(Resource):
                     'analysis': row['analysis'],
                     'createdAt': row['created_at']
                 })
-            
+
             return {'characters': characters}, 200
-            
+
         except Exception as e:
             return {'message': f'Error retrieving characters: {str(e)}'}, 500
-    
+
     def _generate_ai_analysis(self, name, motivation, fear, secret, game_mode, api_key):
         """Generate character analysis using Groq AI"""
         try:
@@ -429,7 +409,7 @@ Keep the tone dynamic, compelling, and focused on adventure and conflict."""
                 },
                 timeout=30
             )
-            
+
             if response.status_code == 200:
                 result = response.json()
                 analysis = result['choices'][0]['message']['content'].strip()
@@ -440,12 +420,12 @@ Keep the tone dynamic, compelling, and focused on adventure and conflict."""
                 current_app.logger.error(f"Groq API error: {response.status_code} - {response.text}")
                 print(f"❌ Groq API error: {response.status_code}")
                 return self._generate_basic_analysis(name, motivation, fear, secret, game_mode)
-                
+
         except Exception as e:
             # Fallback to basic analysis on error
             current_app.logger.error(f"Error generating AI analysis: {e}")
             return self._generate_basic_analysis(name, motivation, fear, secret, game_mode)
-    
+
     def _generate_basic_analysis(self, name, motivation, fear, secret, game_mode):
         """Fallback basic analysis if AI is unavailable"""
         if game_mode == 'cozy':
@@ -464,9 +444,9 @@ class QuestAPI(Resource):
         """Create a new quest and add to quest log"""
         try:
             data = request.get_json()
-            
+
             print(f"📝 Quest creation request received: {data}")
-            
+
             # Extract quest data
             title = data.get('title', '').strip()
             location = data.get('location', '').strip()
@@ -475,9 +455,9 @@ class QuestAPI(Resource):
             reward = data.get('reward', '').strip()
             game_mode = data.get('gameMode', 'action')
             user_github_id = data.get('userGithubId', '').strip()  # Get user ID from frontend
-            
+
             print(f"✅ Parsed data - User: {user_github_id}, Title: {title}")
-            
+
             # Validate required fields
             if not all([title, location, objective, difficulty, reward, user_github_id]):
                 missing = []
@@ -489,23 +469,23 @@ class QuestAPI(Resource):
                 if not user_github_id: missing.append('userGithubId')
                 print(f"❌ Missing fields: {missing}")
                 return {'message': f'Missing required fields: {", ".join(missing)}'}, 400
-            
+
             # Save to database with user association
             db_path = get_rpg_db_path()
             conn = sqlite3.connect(db_path)
             cursor = conn.cursor()
-            
+
             cursor.execute('''
                 INSERT INTO quests (user_github_id, title, location, objective, difficulty, reward, game_mode)
                 VALUES (?, ?, ?, ?, ?, ?, ?)
             ''', (user_github_id, title, location, objective, difficulty, reward, game_mode))
-            
+
             quest_id = cursor.lastrowid
             conn.commit()
             conn.close()
-            
+
             print(f"✨ Quest created successfully with ID: {quest_id}")
-            
+
             # Return the quest data
             quest = {
                 'id': quest_id,
@@ -516,39 +496,39 @@ class QuestAPI(Resource):
                 'reward': reward,
                 'gameMode': game_mode
             }
-            
+
             return quest, 201
-            
+
         except Exception as e:
             print(f"💥 Error creating quest: {str(e)}")
             import traceback
             traceback.print_exc()
             return {'message': f'Error creating quest: {str(e)}'}, 500
-    
+
     def get(self):
         """Get all quests for a specific user"""
         try:
             # Get user_github_id from query parameters
             user_github_id = request.args.get('userGithubId', '').strip()
-            
+
             if not user_github_id:
                 return {'message': 'User GitHub ID is required'}, 400
-            
+
             db_path = get_rpg_db_path()
             conn = sqlite3.connect(db_path)
             conn.row_factory = sqlite3.Row
             cursor = conn.cursor()
-            
+
             # Only get quests for this specific user
             cursor.execute('''
                 SELECT * FROM quests 
                 WHERE user_github_id = ? 
                 ORDER BY created_at DESC
             ''', (user_github_id,))
-            
+
             rows = cursor.fetchall()
             conn.close()
-            
+
             quests = []
             for row in rows:
                 quests.append({
@@ -560,11 +540,13 @@ class QuestAPI(Resource):
                     'reward': row['reward'],
                     'gameMode': row['game_mode']
                 })
-            
+
             return {'quests': quests}, 200
-            
+
         except Exception as e:
-            return {'message': f'Error retrieving quests: {str(e)}'}, 500# --- API Resource for Key Binding Creation and Retrieval ---
+            return {'message': f'Error retrieving quests: {str(e)}'}, 500
+
+# --- API Resource for Key Binding Creation and Retrieval ---
 class KeyBindingAPI(Resource):
     """Key bindings management
 
@@ -830,7 +812,6 @@ class KeyBindingAPI(Resource):
             traceback.print_exc()
             return {'message': f'Error saving key bindings: {str(e)}'}, 500
 
-
     def get(self):
         """Get the most recent key bindings for a specific user (and optional game mode)"""
         try:
@@ -931,13 +912,9 @@ class KeyBindingAPI(Resource):
         except Exception as e:
             return {'message': f'Error retrieving key bindings: {str(e)}'}, 500
 
-
-
 # ============================================================================
 # STORY ELEMENTS API RESOURCES
 # ============================================================================
-# These endpoints handle story element data (plot hooks, NPCs, twists, etc.)
-# and voting (love/skip counts) similar to the jokes system
 
 class StoryElementsAPI(Resource):
     """Story elements browsing
@@ -972,10 +949,9 @@ class StorySkipAPI(Resource):
 # RPG User and Authentication endpoints
 api.add_resource(RPGDataAPI, '/api/rpg/data')
 api.add_resource(RPGLoginAPI, '/api/rpg/login')
-
 # Character and Quest endpoints
 api.add_resource(CharacterAPI, '/api/rpg/character')
-api.add_resource(QuestAPI, '/api/rpg/quest', '/api/rpg/quests')  # Support both singular and plural
+api.add_resource(QuestAPI, '/api/rpg/quest', '/api/rpg/quests')
 api.add_resource(KeyBindingAPI, '/api/rpg/keybindings')
 
 # Story Elements endpoints
@@ -1023,14 +999,14 @@ def rpg_home():
         <div class="container">
             <h1>🎮 RPG Game Backend API</h1>
             <p>Flask server is running successfully!</p>
-            
+
             <h2>Available Endpoints:</h2>
-            
+
             <div class="endpoint">
                 <h3>GET /api/rpg/data</h3>
                 <p>Retrieve all registered RPG users</p>
             </div>
-            
+
             <div class="endpoint">
                 <h3>POST /api/rpg/data</h3>
                 <p>Register a new RPG user</p>
@@ -1044,7 +1020,7 @@ def rpg_home():
                     }
                 </code>
             </div>
-            
+
             <div class="endpoint">
                 <h3>POST /api/rpg/login</h3>
                 <p>Login an existing RPG user</p>
@@ -1064,13 +1040,11 @@ def rpg_home():
     """
     return html_content
 
-# --- RPG Statistics (kept below) ---
+# --- RPG Statistics (updated schema + POST-only legacy record) ---
 DATABASE = os.path.join('instance', 'rpg', 'rpg_statistics.db')
 
-# Ensure directory exists
 os.makedirs(os.path.dirname(DATABASE), exist_ok=True)
 
-# Database connection management
 @contextmanager
 def get_db():
     conn = sqlite3.connect(DATABASE)
@@ -1080,40 +1054,43 @@ def get_db():
     finally:
         conn.close()
 
-# Initialize stats DB
 def init_rpg_stats():
-    """Initialize RPG statistics database"""
+    """Initialize RPG statistics database (mode_stats + user_mode, no timestamp)"""
     with get_db() as conn:
         cursor = conn.cursor()
+
+        # NEW TABLE: mode_stats (was statistics)
         cursor.execute('''
-            CREATE TABLE IF NOT EXISTS statistics (
+            CREATE TABLE IF NOT EXISTS mode_stats (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 mode TEXT NOT NULL UNIQUE,
                 count INTEGER NOT NULL DEFAULT 0
             )
         ''')
+
+        # NEW TABLE: user_mode (was history) -- NO TIMESTAMP
         cursor.execute('''
-            CREATE TABLE IF NOT EXISTS history (
+            CREATE TABLE IF NOT EXISTS user_mode (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
-                user_id TEXT NOT NULL,
-                mode TEXT NOT NULL,
-                timestamp TEXT NOT NULL
+                user_github_id TEXT NOT NULL,
+                mode TEXT NOT NULL
             )
         ''')
-        cursor.execute('SELECT COUNT(*) FROM statistics')
+
+        cursor.execute('SELECT COUNT(*) FROM mode_stats')
         if cursor.fetchone()[0] == 0:
-            cursor.execute('INSERT INTO statistics (mode, count) VALUES (?, ?)', ('chill', 0))
-            cursor.execute('INSERT INTO statistics (mode, count) VALUES (?, ?)', ('action', 0))
-            print('✓ RPG Statistics database initialized')
+            cursor.execute('INSERT INTO mode_stats (mode, count) VALUES (?, ?)', ('chill', 0))
+            cursor.execute('INSERT INTO mode_stats (mode, count) VALUES (?, ?)', ('action', 0))
+            print('✓ RPG Statistics database initialized (mode_stats/user_mode)')
         conn.commit()
 
-
-# Helper to get statistics
 def get_statistics():
     with get_db() as conn:
         cursor = conn.cursor()
-        cursor.execute('SELECT mode, count FROM statistics')
+
+        cursor.execute('SELECT mode, count FROM mode_stats')
         stats_rows = cursor.fetchall()
+
         stats = {'chill': 0, 'action': 0, 'total': 0}
         for row in stats_rows:
             mode = row['mode']
@@ -1122,18 +1099,17 @@ def get_statistics():
             stats['total'] += count
 
         cursor.execute('''
-            SELECT user_id, mode, timestamp 
-            FROM history 
-            ORDER BY id DESC 
+            SELECT user_github_id, mode
+            FROM user_mode
+            ORDER BY id DESC
             LIMIT 100
         ''')
         history_rows = cursor.fetchall()
 
         stats['history'] = [
             {
-                'userId': row['user_id'],
-                'mode': row['mode'],
-                'timestamp': row['timestamp']
+                'userGithubId': row['user_github_id'],
+                'mode': row['mode']
             }
             for row in history_rows
         ]
@@ -1141,85 +1117,9 @@ def get_statistics():
         return stats
 
 
-# Routes (kept same paths as original rpg_stats_api)
-@rpg_api.route('/api/rpg_stats/stats', methods=['GET'])
-def get_stats():
-    """GET /api/rpg_stats/stats - return statistics"""
-    try:
-        stats = get_statistics()
-        print(f'📊 Returning stats: chill={stats["chill"]}, action={stats["action"]}, total={stats["total"]}')
-        return jsonify(stats)
-    except Exception as e:
-        print(f'❌ Error getting stats: {e}')
-        return jsonify({'error': str(e)}), 500
+# --- Legacy `/api/stats` endpoints ---
 
-
-@rpg_api.route('/api/rpg_stats/record', methods=['GET'])
-def record_selection():
-    """GET /api/rpg_stats/record?mode=chill&userId=xxx - record a selection"""
-    try:
-        mode = request.args.get('mode')
-        user_id = request.args.get('userId', 'anonymous')
-        print(f'📝 Recording: mode={mode}, userId={user_id}')
-        if mode not in ['chill', 'action']:
-            return jsonify({'error': 'Invalid mode'}), 400
-
-        with get_db() as conn:
-            cursor = conn.cursor()
-            cursor.execute('''
-                UPDATE statistics 
-                SET count = count + 1 
-                WHERE mode = ?
-            ''', (mode,))
-            timestamp = datetime.utcnow().isoformat()
-            cursor.execute('''
-                INSERT INTO history (user_id, mode, timestamp)
-                VALUES (?, ?, ?)
-            ''', (user_id, mode, timestamp))
-            conn.commit()
-            print(f'✓ Successfully recorded {mode} selection')
-
-        stats = get_statistics()
-        return jsonify(stats)
-
-    except Exception as e:
-        print(f'❌ Error recording selection: {e}')
-        return jsonify({'error': str(e)}), 500
-
-
-@rpg_api.route('/api/rpg_stats/reset', methods=['GET', 'POST'])
-def reset_stats():
-    """GET/POST /api/rpg_stats/reset - reset statistics"""
-    try:
-        with get_db() as conn:
-            cursor = conn.cursor()
-            cursor.execute('UPDATE statistics SET count = 0')
-            cursor.execute('DELETE FROM history')
-            conn.commit()
-            print('✓ Statistics reset successfully')
-
-        stats = get_statistics()
-        return jsonify(stats)
-
-    except Exception as e:
-        print(f'❌ Error resetting stats: {e}')
-        return jsonify({'error': str(e)}), 500
-
-
-@rpg_api.route('/api/rpg_stats/health', methods=['GET'])
-def health():
-    """GET /api/rpg_stats/health - health check"""
-    return jsonify({
-        'status': 'healthy',
-        'database': DATABASE,
-        'message': 'RPG Statistics API is running'
-    })
-
-
-# Initialize the stats DB on module load
-# --- Legacy `/api/stats` endpoints moved here (kept organized) ---
-
-@rpg_api.route('/api/stats', methods=['GET'])
+@rpg_api.route('/api/rpg_stats', methods=['GET'])
 def get_stats_legacy():
     """GET /api/stats - return statistics (legacy route)"""
     try:
@@ -1228,34 +1128,36 @@ def get_stats_legacy():
     except Exception as e:
         return jsonify({'error': str(e)}), 500
 
-
-@rpg_api.route('/api/stats/record', methods=['GET', 'POST'])
+# POST-ONLY now, uses userGithubId, writes to mode_stats/user_mode
+@rpg_api.route('/api/rpg_stats/record', methods=['POST'])
 def record_selection_legacy():
-    """Record a selection via GET or POST (legacy route)"""
+    """POST /api/stats/record - record a selection (legacy route, now POST-only)
+
+    Body JSON:
+      { "mode": "chill" | "action", "userGithubId": "your_github_id" }
+    """
     try:
-        if request.method == 'GET':
-            mode = request.args.get('mode')
-            user_id = request.args.get('userId', 'anonymous')
-        else:
-            data = request.get_json() or {}
-            mode = data.get('mode')
-            user_id = data.get('userId', 'anonymous')
+        data = request.get_json(silent=True) or {}
+        mode = (data.get('mode') or '').strip()
+        user_github_id = (data.get('userGithubId') or 'anonymous').strip() or 'anonymous'
 
         if mode not in ['chill', 'action']:
             return jsonify({'error': 'Invalid mode'}), 400
 
         with get_db() as conn:
             cursor = conn.cursor()
+
             cursor.execute('''
-                UPDATE statistics
+                UPDATE mode_stats
                 SET count = count + 1
                 WHERE mode = ?
             ''', (mode,))
-            timestamp = datetime.utcnow().isoformat()
+
             cursor.execute('''
-                INSERT INTO history (user_id, mode, timestamp)
-                VALUES (?, ?, ?)
-            ''', (user_id, mode, timestamp))
+                INSERT INTO user_mode (user_github_id, mode)
+                VALUES (?, ?)
+            ''', (user_github_id, mode))
+
             conn.commit()
 
         stats = get_statistics()
@@ -1264,15 +1166,14 @@ def record_selection_legacy():
     except Exception as e:
         return jsonify({'error': str(e)}), 500
 
-
-@rpg_api.route('/api/stats/reset', methods=['GET', 'POST'])
+@rpg_api.route('/api/rpg_stats/reset', methods=['GET', 'POST'])
 def reset_stats_legacy():
     """Reset statistics (legacy route)"""
     try:
         with get_db() as conn:
             cursor = conn.cursor()
-            cursor.execute('UPDATE statistics SET count = 0')
-            cursor.execute('DELETE FROM history')
+            cursor.execute('UPDATE mode_stats SET count = 0')
+            cursor.execute('DELETE FROM user_mode')
             conn.commit()
 
         stats = get_statistics()
@@ -1281,12 +1182,10 @@ def reset_stats_legacy():
     except Exception as e:
         return jsonify({'error': str(e)}), 500
 
-
-@rpg_api.route('/api/stats/health', methods=['GET'])
+@rpg_api.route('/api/rpg_stats/health', methods=['GET'])
 def stats_health_legacy():
     """Legacy health check for /api/stats"""
     return jsonify({'status': 'healthy', 'database': DATABASE})
-
 
 # Initialize the stats DB on module load
 init_rpg_stats()
