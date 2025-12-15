@@ -112,14 +112,15 @@ def init_rpg_db():
 
 
 
-    # Create key_bindings table (new schema)
+    # 🚨 FORCE RESET key_bindings TABLE (TEMPORARY FIX)
+    cursor.execute("DROP TABLE IF EXISTS key_bindings")
+
     cursor.execute('''
-        CREATE TABLE IF NOT EXISTS key_bindings (
+        CREATE TABLE key_bindings (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             user_github_id TEXT NOT NULL,
             game_mode TEXT NOT NULL,
 
-            -- Core movement & interaction
             move_up_key TEXT NOT NULL,
             move_left_key TEXT NOT NULL,
             move_down_key TEXT NOT NULL,
@@ -128,7 +129,6 @@ def init_rpg_db():
             jump_key TEXT NOT NULL,
             sprint_key TEXT,
 
-            -- Universal extras
             secondary_interact_key TEXT,
             quick_action_key TEXT,
             inventory_key TEXT,
@@ -137,7 +137,6 @@ def init_rpg_db():
             quick_menu_key TEXT,
             screenshot_key TEXT,
 
-            -- Cozy extras
             tool1_key TEXT,
             tool2_key TEXT,
             tool3_key TEXT,
@@ -155,7 +154,6 @@ def init_rpg_db():
             cozy_inspect_key TEXT,
             pet_whistle_key TEXT,
 
-            -- Action combat
             primary_attack_key TEXT,
             heavy_attack_key TEXT,
             ability1_key TEXT,
@@ -179,6 +177,7 @@ def init_rpg_db():
             created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
         )
     ''')
+
 
     conn.commit()
     conn.close()
