@@ -93,15 +93,25 @@ def init_rpg_db():
         )
     ''')
 
-    # 🔧 MIGRATION: drop old key_bindings table if it doesn't have the new columns
+    # 🔧 MIGRATION: drop old key_bindings table if schema doesn't match current expected columns
     cursor.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='key_bindings'")
     table_exists = cursor.fetchone()
     if table_exists:
         cursor.execute("PRAGMA table_info(key_bindings)")
         cols = [row[1] for row in cursor.fetchall()]
-        # if this column is missing, it's the old schema → drop and recreate
-        if 'secondary_interact_key' not in cols:
+
+        # Must-have columns for the current schema
+        required_cols = [
+            'secondary_interact_key',   # your current column name
+            'quick_action_key',
+            'quick_menu_key',
+            'screenshot_key'
+        ]
+
+        # If ANY required column is missing, table is outdated → drop it
+        if any(c not in cols for c in required_cols):
             cursor.execute("DROP TABLE key_bindings")
+
 
     # Create key_bindings table (new schema)
     cursor.execute('''
