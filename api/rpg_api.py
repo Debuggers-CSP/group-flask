@@ -193,6 +193,17 @@ def init_rpg_db(app=None):
         )
     ''')
 
+    # Create game_systems table (for the Game Systems page)
+    cursor.execute('''
+        CREATE TABLE IF NOT EXISTS systems (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            user_github_id TEXT NOT NULL,
+            game_mode TEXT NOT NULL,
+            systems_json TEXT NOT NULL,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        )
+    ''')
+
 
     conn.commit()
     conn.close()
@@ -955,6 +966,116 @@ class KeyBindingAPI(Resource):
         except Exception as e:
             return {'message': f'Error retrieving key bindings: {str(e)}'}, 500
 
+
+
+# --- API Resource for Game Systems Save/Load ---
+class GameSystemsAPI(Resource):
+    """
+    Save/load the user's selected game systems settings for the Game Systems page.
+
+    Endpoint: /api/rpg/systems  (POST/GET)
+    Stores a JSON blob in SQLite so the frontend can restore the latest settings.
+    """
+
+    def post(self):
+        try:
+            data = request.get_json(silent=True) or {}
+
+            user_github_id = (data.get('userGithubId') or '').strip()
+            game_mode = (data.get('gameMode') or 'action').strip() or 'action'
+
+            # Accept either `systems` (recommended) or any other fields
+            systems = data.get('systems')
+
+            if not user_github_id:
+                return {'message': 'Missing required field: userGithubId'}, 400
+
+            if systems is None:
+                # If frontend didn't wrap in `systems`, store the entire payload minus identifiers
+                systems = dict(data)
+                systems.pop('userGithubId', None)
+                systems.pop('gameMode', None)
+
+            # Ensure JSON serialization
+            import json
+            systems_json = json.dumps(systems)
+
+            db_path = get_rpg_db_path()
+            conn = sqlite3.connect(db_path)
+            cursor = conn.cursor()
+
+            cursor.execute('''
+                INSERT INTO systems (user_github_id, game_mode, systems_json)
+                VALUES (?, ?, ?)
+            ''', (user_github_id, game_mode, systems_json))
+
+            systems_id = cursor.lastrowid
+            conn.commit()
+            conn.close()
+
+            return {
+                'id': systems_id,
+                'userGithubId': user_github_id,
+                'gameMode': game_mode,
+                'systems': systems
+            }, 201
+
+        except Exception as e:
+            import traceback
+            traceback.print_exc()
+            return {'message': f'Error saving game systems: {str(e)}'}, 500
+
+    def get(self):
+        try:
+            user_github_id = (request.args.get('userGithubId') or '').strip()
+            game_mode = (request.args.get('gameMode') or '').strip()
+
+            if not user_github_id:
+                return {'message': 'User GitHub ID is required'}, 400
+
+            db_path = get_rpg_db_path()
+            conn = sqlite3.connect(db_path)
+            conn.row_factory = sqlite3.Row
+            cursor = conn.cursor()
+
+            if game_mode:
+                cursor.execute('''
+                    SELECT * FROM systems
+                    WHERE user_github_id = ? AND game_mode = ?
+                    ORDER BY created_at DESC
+                    LIMIT 1
+                ''', (user_github_id, game_mode))
+            else:
+                cursor.execute('''
+                    SELECT * FROM systems
+                    WHERE user_github_id = ?
+                    ORDER BY created_at DESC
+                    LIMIT 1
+                ''', (user_github_id,))
+
+            row = cursor.fetchone()
+            conn.close()
+
+            if not row:
+                return {'message': 'No game systems found for this user'}, 404
+
+            import json
+            systems = json.loads(row['systems_json'])
+
+            return {
+                'systems': {
+                    'id': row['id'],
+                    'userGithubId': row['user_github_id'],
+                    'gameMode': row['game_mode'],
+                    'systems': systems,
+                    'createdAt': row['created_at']
+                }
+            }, 200
+
+        except Exception as e:
+            return {'message': f'Error retrieving game systems: {str(e)}'}, 500
+
+
 # ============================================================================
 # STORY ELEMENTS API RESOURCES
 # ============================================================================
@@ -1002,6 +1123,8 @@ api.add_resource(StoryElementsAPI, '/api/rpg/story', '/api/rpg/story/')
 api.add_resource(StoryElementAPI, '/api/rpg/story/<int:id>', '/api/rpg/story/<int:id>/')
 api.add_resource(StoryLoveAPI, '/api/rpg/story/love/<int:id>', '/api/rpg/story/love/<int:id>/')
 api.add_resource(StorySkipAPI, '/api/rpg/story/skip/<int:id>', '/api/rpg/story/skip/<int:id>/')
+
+api.add_resource(GameSystemsAPI, '/api/rpg/systems')
 
 # HTML endpoint for testing
 @rpg_api.route('/rpg')
