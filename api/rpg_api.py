@@ -22,6 +22,9 @@ CORS(
         r"/api/*": {
             "origins": [
                 "http://localhost:4500",
+                "http://127.0.0.1:4500",
+                "http://localhost:4000",
+                "http://127.0.0.1:4000",
                 "https://flask.opencodingsociety.com"
             ]
         }
@@ -386,6 +389,7 @@ class CharacterAPI(Resource):
 
     def get(self):
         try:
+            import json as _json
             user_github_id = request.args.get('userGithubId', '').strip()
             if not user_github_id:
                 return {'message': 'User GitHub ID is required'}, 400
@@ -406,6 +410,13 @@ class CharacterAPI(Resource):
             if not row:
                 return {'character': None}, 200
 
+            appearance = {}
+            try:
+                if 'appearance_json' in row.keys() and row['appearance_json']:
+                    appearance = _json.loads(row['appearance_json'])
+            except Exception:
+                appearance = {}
+
             character = {
                 'id': row['id'],
                 'name': row['name'],
@@ -414,6 +425,7 @@ class CharacterAPI(Resource):
                 'secret': row['secret'],
                 'gameMode': row['game_mode'],
                 'analysis': row['analysis'],
+                'appearance': appearance,
                 'createdAt': row['created_at']
             }
             return {'character': character}, 200
