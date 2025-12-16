@@ -1,36 +1,33 @@
 # RPG Game Login Backend API
 from flask import Blueprint, jsonify, request, current_app
+from flask_cors import CORS
 from contextlib import contextmanager
 from flask_restful import Api, Resource
+import sqlite3
+import os
 import requests
 from model.rpg_user import RPGUser
 from model.user import User
-from api.rpg_stories import *  # Story elements data management
-import sqlite3
-import os
-from datetime import datetime  # still used elsewhere in file
+from api.rpg_stories import *
 
-# Create Blueprint
+# Create Blueprint and attach RESTful API
 rpg_api = Blueprint('rpg_api', __name__)
+# Enable CORS for the RPG API blueprint
+CORS(
+    rpg_api,
+    supports_credentials=True,
+    methods=["GET", "POST", "PUT", "OPTIONS"],
+    allow_headers=["Content-Type", "X-Origin"],
+    resources={
+        r"/api/*": {
+            "origins": [
+                "http://localhost:4500",
+                "https://flask.opencodingsociety.com"
+            ]
+        }
+    }
+)
 api = Api(rpg_api)
-
-# ---------------------------------------------------------------------------
-# API Overview / Frontend mapping
-# ---------------------------------------------------------------------------
-# This file implements the RPG-related backend used by two main frontend
-# surfaces:
-#
-# 1) The in-game RPG frontend (SPA or pages that call these endpoints):
-#    - `/rpg` (HTML test page provided by this blueprint)
-#    - Endpoints under `/api/rpg/*` used by the game UI to register/login
-#      users, save/load character sheets, quests, and key bindings.
-#    - Typical front-end files: `static/js/...` (game client), or whichever
-#      frontend calls `/api/rpg/*` routes.
-#
-# 2) The admin / dashboard pages (server-rendered templates):
-#    - `templates/rpg_stats.html` — admin dashboard that inspects RPG users,
-#      character sheets and quests. It calls the stats endpoints below to
-#      present aggregated data.
 #
 # Route groups and their frontend targets:
 # - `/api/rpg/data`         : RPG user list + registration  (game UI / admin)
@@ -92,6 +89,15 @@ def init_rpg_db(app=None):
             created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
         )
     ''')
+
+    # Safe migration: add appearance_json if missing
+    cursor.execute("PRAGMA table_info(character_sheets)")
+    _char_cols = [row[1] for row in cursor.fetchall()]
+    if 'appearance_json' not in _char_cols:
+        try:
+            cursor.execute('ALTER TABLE character_sheets ADD COLUMN appearance_json TEXT')
+        except Exception:
+            pass
     
     # Create quests table
     cursor.execute('''
@@ -127,11 +133,10 @@ def init_rpg_db(app=None):
 
 
 
-    # 🚨 FORCE RESET key_bindings TABLE (TEMPORARY FIX)
-    cursor.execute("DROP TABLE IF EXISTS key_bindings")
+    # Do not force-drop key_bindings; preserve user key bindings
 
     cursor.execute('''
-        CREATE TABLE key_bindings (
+        CREATE TABLE IF NOT EXISTS key_bindings (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             user_github_id TEXT NOT NULL,
             game_mode TEXT NOT NULL,
@@ -316,6 +321,9 @@ class CharacterAPI(Resource):
 
             # Get user GitHub ID if provided (for saving to database)
             user_github_id = data.get('userGithubId', '').strip()
+            # Appearance payload (optional)
+            import json as _json
+            appearance = data.get('appearance') or {}
 
             print(f"\n🔍 ATTEMPTING TO SAVE CHARACTER:")
             print(f"   User GitHub ID: '{user_github_id}'")
@@ -330,10 +338,19 @@ class CharacterAPI(Resource):
                     conn = sqlite3.connect(db_path)
                     cursor = conn.cursor()
 
-                    cursor.execute('''
-                        INSERT INTO character_sheets (user_github_id, name, motivation, fear, secret, game_mode, analysis)
-                        VALUES (?, ?, ?, ?, ?, ?, ?)
-                    ''', (user_github_id, name, motivation, fear, secret, game_mode, analysis))
+                    # Determine presence of appearance_json column
+                    cursor.execute("PRAGMA table_info(character_sheets)")
+                    _cols = [row[1] for row in cursor.fetchall()]
+                    if 'appearance_json' in _cols:
+                        cursor.execute('''
+                            INSERT INTO character_sheets (user_github_id, name, motivation, fear, secret, game_mode, analysis, appearance_json)
+                            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                        ''', (user_github_id, name, motivation, fear, secret, game_mode, analysis, _json.dumps(appearance)))
+                    else:
+                        cursor.execute('''
+                            INSERT INTO character_sheets (user_github_id, name, motivation, fear, secret, game_mode, analysis)
+                            VALUES (?, ?, ?, ?, ?, ?, ?)
+                        ''', (user_github_id, name, motivation, fear, secret, game_mode, analysis))
 
                     character_id = cursor.lastrowid
                     conn.commit()
@@ -353,7 +370,8 @@ class CharacterAPI(Resource):
                 'fear': fear,
                 'secret': secret,
                 'gameMode': game_mode,
-                'analysis': analysis
+                'analysis': analysis,
+                'appearance': appearance
             }
 
             return character_sheet, 200
@@ -362,11 +380,8 @@ class CharacterAPI(Resource):
             return {'message': f'Error creating character: {str(e)}'}, 500
 
     def get(self):
-        """Get all character sheets for a specific user"""
         try:
-            # Get user_github_id from query parameters
             user_github_id = request.args.get('userGithubId', '').strip()
-
             if not user_github_id:
                 return {'message': 'User GitHub ID is required'}, 400
 
@@ -374,32 +389,29 @@ class CharacterAPI(Resource):
             conn = sqlite3.connect(db_path)
             conn.row_factory = sqlite3.Row
             cursor = conn.cursor()
-
-            # Only get characters for this specific user
             cursor.execute('''
-                SELECT * FROM character_sheets 
-                WHERE user_github_id = ? 
-                ORDER BY created_at DESC
+            SELECT * FROM character_sheets
+            WHERE user_github_id = ?
+            ORDER BY created_at DESC
+            LIMIT 1
             ''', (user_github_id,))
-
-            rows = cursor.fetchall()
+            row = cursor.fetchone()
             conn.close()
 
-            characters = []
-            for row in rows:
-                characters.append({
-                    'id': row['id'],
-                    'name': row['name'],
-                    'motivation': row['motivation'],
-                    'fear': row['fear'],
-                    'secret': row['secret'],
-                    'gameMode': row['game_mode'],
-                    'analysis': row['analysis'],
-                    'createdAt': row['created_at']
-                })
+            if not row:
+                return {'character': None}, 200
 
-            return {'characters': characters}, 200
-
+            character = {
+                'id': row['id'],
+                'name': row['name'],
+                'motivation': row['motivation'],
+                'fear': row['fear'],
+                'secret': row['secret'],
+                'gameMode': row['game_mode'],
+                'analysis': row['analysis'],
+                'createdAt': row['created_at']
+            }
+            return {'character': character}, 200
         except Exception as e:
             return {'message': f'Error retrieving characters: {str(e)}'}, 500
 
@@ -1106,6 +1118,22 @@ class StorySkipAPI(Resource):
         addStorySkip(id)
         return jsonify(getStoryElement(id))
 
+class StorySummaryAPI(Resource):
+    """Aggregate love/skip counts overall and by category"""
+    def get(self):
+        elements = getStoryElements()
+        totals = {'totalLove': 0, 'totalSkip': 0, 'byCategory': {}}
+        for el in elements:
+            cat = el.get('category') or 'Other'
+            love = int(el.get('love') or 0)
+            skip = int(el.get('skip') or 0)
+            totals['totalLove'] += love
+            totals['totalSkip'] += skip
+            bucket = totals['byCategory'].setdefault(cat, {'love': 0, 'skip': 0})
+            bucket['love'] += love
+            bucket['skip'] += skip
+        return jsonify(totals)
+
 # ============================================================================
 # REGISTER API ENDPOINTS
 # ============================================================================
@@ -1123,6 +1151,7 @@ api.add_resource(StoryElementsAPI, '/api/rpg/story', '/api/rpg/story/')
 api.add_resource(StoryElementAPI, '/api/rpg/story/<int:id>', '/api/rpg/story/<int:id>/')
 api.add_resource(StoryLoveAPI, '/api/rpg/story/love/<int:id>', '/api/rpg/story/love/<int:id>/')
 api.add_resource(StorySkipAPI, '/api/rpg/story/skip/<int:id>', '/api/rpg/story/skip/<int:id>/')
+api.add_resource(StorySummaryAPI, '/api/rpg/story/summary', '/api/rpg/story/summary/')
 
 api.add_resource(GameSystemsAPI, '/api/rpg/systems')
 
