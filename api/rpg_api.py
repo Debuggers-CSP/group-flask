@@ -13,6 +13,18 @@ from api.rpg_stories import *
 # Create Blueprint and attach RESTful API
 rpg_api = Blueprint('rpg_api', __name__)
 # Enable CORS for the RPG API blueprint
+# Compute allowed origins including optional frontend origins from env
+_base_origins = [
+    "http://localhost:4500",
+    "http://127.0.0.1:4500",
+    "http://localhost:4000",
+    "http://127.0.0.1:4000",
+    "https://flask.opencodingsociety.com",
+]
+_extra_origins_env = os.getenv("FRONTEND_ORIGINS", "")
+_extra_origins = [o.strip() for o in _extra_origins_env.split(",") if o.strip()]
+_allowed_origins = _base_origins + _extra_origins
+
 CORS(
     rpg_api,
     supports_credentials=True,
@@ -20,13 +32,7 @@ CORS(
     allow_headers=["Content-Type", "X-Origin"],
     resources={
         r"/api/*": {
-            "origins": [
-                "http://localhost:4500",
-                "http://127.0.0.1:4500",
-                "http://localhost:4000",
-                "http://127.0.0.1:4000",
-                "https://flask.opencodingsociety.com"
-            ]
+            "origins": _allowed_origins
         }
     }
 )
