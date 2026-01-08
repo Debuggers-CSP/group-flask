@@ -1,27 +1,20 @@
-# Use official Python image as base image
-FROM python:3.12-slim
+  FROM docker.io/python:3.11
 
-# Set working directory
-WORKDIR /app
+  WORKDIR /
 
-# Install system dependencies and clean up apt cache
-RUN apt-get update && apt-get install -y --no-install-recommends \
-    git && \
-    apt-get clean && rm -rf /var/lib/apt/lists/*
+  # --- [Install python and pip] ---
+  RUN apt-get update && apt-get upgrade -y && \
+      apt-get install -y python3 python3-pip git
+  COPY . /
 
-# Copy application code into the container
-COPY . /app
+  RUN pip install --no-cache-dir -r requirements.txt
+  RUN pip install gunicorn
 
-# Upgrade pip and install dependencies
-RUN pip install --upgrade pip && \
-    pip install --no-cache-dir -r requirements.txt && \
-    pip install gunicorn
+  ENV GUNICORN_CMD_ARGS="--workers=1 --bind=0.0.0.0:8304"
 
-# Set environment variables
-ENV FLASK_ENV=production \
-    GUNICORN_CMD_ARGS="--workers=5 --threads=2 --bind=0.0.0.0:8304 --timeout=30 --access-logfile -"
+  EXPOSE 8087
 
-# Expose application port
-EXPOSE 8304
-# Start Gunicorn server
-CMD ["gunicorn", "main:app"]
+  # Define environment variable
+  ENV FLASK_ENV=production
+
+  CMD [ "gunicorn", "main:app" ]
