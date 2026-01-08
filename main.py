@@ -375,6 +375,6 @@ if __name__ == "__main__":
     host = "0.0.0.0"
     port = app.config['FLASK_PORT']
     print(f"** Server running: http://localhost:{port}")  # Pretty link
-    app.run(debug=True, host=host, port=port, use_reloader=False)
+    app.run(debug=True, host="0.0.0.0", port="8304", use_reloader=False)
 
   
